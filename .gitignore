@@ -1,0 +1,12 @@
+# Excel temp / lock files
+~$*.xlsx
+~$*.xlsm
+*.tmp
+
+# Local working copies of the workbook (rebuild from formulas instead)
+*.xlsx
+*.xlsm
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -1,6 +1,6 @@
 # trim-decision-tools
 
-<p align="center"><img src="docs/images/logo.png" alt="Trim Decision Tools" width="580"></p>
+<p align="center"><img src="docs/images/logo.png" alt="Trim Decision Tools" width="411"></p>
 
 Three tools that turn a Comact TrimExpert product export into pricing and trim
 decisions on a hardwood sawmill floor.

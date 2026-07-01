@@ -40,7 +40,7 @@ GAP = 0.89
 
 # FREEZE_FROM: set to a length (e.g. 13) to flatten every grade at that length and longer to
 # the top price. Those lengths then never trim (length wins, grade is equalized). None = off.
-FREEZE_FROM = 13
+FREEZE_FROM = None
 
 LENGTHS = list(range(6, 17))
 

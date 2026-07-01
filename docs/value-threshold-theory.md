@@ -20,17 +20,22 @@ clear the current value by more than the lost wood is worth.
 A higher grade lifts $/MBF and a longer board adds board feet. Trimming shortens
 the board, trading board feet for a shot at a better grade or a more saleable length.
 
-## The 20 to 25 percent gap
+## How big the one-grade gap can be
 
-This is the practical threshold the model is tuned around. It is not a setting. It
-is the size of the price gap you have to build for an upgrade to win once surface
-measure is lost.
+Two forces pull on the one-grade price step in opposite directions.
 
-Worked example: a 7 ft 1 Common chopped to a 6 ft prime drops a surface measure.
-To make that trade pay, the price difference has to sit around 20 to 25 percent.
+An upgrade that loses surface measure (a 7 ft chopped to a 6 ft, dropping a full board foot)
+only pays if the price jump is large, roughly 20 to 25 percent. A big gap is what would force
+those trades.
 
-- No surface measure lost, a small gap triggers the upgrade.
-- Surface measure lost, a bigger gap is needed, roughly 20 to 25 percent.
+But a one-grade gap above about 13.5 percent breaks even-length protection: a 16 starts
+trimming down to a 15 (see below). So the gap cannot be pushed to 20 to 25 percent without
+leaking the long evens.
+
+The model keeps the one-grade step (GAP) around 12 percent. That protects the evens and still
+fires the near-even upgrades (9 to 8, 11 to 10, and so on, which lose little or no surface
+measure). The heavy surface-measure-losing trades like 7 to 6 do not fire, which is the right
+call: you do not want to chop a 7 down to a 6, and you do not want a 16 trimming to a 15.
 
 ## The over-pricing trap
 
@@ -43,27 +48,41 @@ legitimate odd-length grades alive.
 
 ## Even-length protection
 
-A good even length should never trim down to an odd one. This is baked into the
-prices rather than enforced by a rule on top. At 6 in width the pairs 7/8, 9/10, 11/12 tie on
-surface measure, so a one-grade gain between them reads the same in both
-directions. A grid that pulls 9 ft up to 8 ft will also pull 8 ft down to 7 ft at
-that width. You cannot allow one and forbid the other through pricing alone, so
-evens are protected: every even out-values the better-grade odd just below it.
+A good even length should never trim down to a shorter odd one: a 16 should not become a 15,
+a 14 should not become a 13. This is done entirely in the prices, because the prices are the
+only thing the optimizer reads. There is no rule sitting on top.
+
+The lever is GAP, the one-grade price step (each tier is priced at GAP times the tier above).
+A 16 stays put only if the 15 one grade up is worth less, and working that through the board
+foot math gives a ceiling: with the odd discount at 0.06, the one-grade step has to be at
+least 0.882 (about a 13.5 percent gap or smaller). The step also has to be small enough that
+the odd upgrades still fire, which caps it around 0.912. So GAP lives in a band of about 0.882
+to 0.912, with 0.89 in the middle. Inside that band every even is protected one grade up and
+every odd still upgrades.
+
+Ties help too: grades sharing one price never trim between each other, which is how Select is
+kept from being reached by a 1 Common, and how walnut is pinned so it never trims.
+
+The one thing pricing cannot cover is a two-grade jump in a single cut (a 2 Common landing as
+FAS). Two steps stack past the ceiling, so a long even can still be pulled by a two-grade gain.
+That is what the freeze is for.
 
 ## How this maps to the generator
 
-The scalable-model tool puts the same logic in code:
+The scalable-model tool puts the same logic in code, all of it in the prices:
 
-- ODD_DISCOUNT sets the even/odd gap. It has to stay under 1/15 = 0.0667, or a
-  15 ft board trims to 14 ft inside its own grade and the even-protection rule
-  fails.
-- The decision rule is pure value: a trim fires on any positive gain, because the
-  Comact upgrades whenever a solution is worth even a cent more. The 20 to 25
-  percent is not a decision filter, it is the gap you build into the grade levels so
-  the trade clears after surface measure loss. You steer trims with the prices.
-- FLATTEN_AT drops the even/odd gap to zero for the bottom grades. Once into 3B,
-  SG, or pallet the price variance goes away and the floor does not trim for even
-  lengths.
+- GAP is the one-grade price step (each tier is GAP times the tier above). It is the even
+  protection. Keep it in the 0.882 to 0.912 band: tighter and the odd upgrades stop firing,
+  looser and the long evens leak. 0.89 is the default.
+- ODD_DISCOUNT is the even/odd lever (0.06). It must stay under 1/15 = 0.0667, or a 15 trims
+  to 14 inside its own grade.
+- SIX_DISCOUNT drops the 6 ft to a low point so nothing wants to become a 6.
+- The decision is pure value: a trim fires on any positive gain, exactly like the Comact. No
+  decision-side rule, so what the model shows is what the machine does.
+- FREEZE_FROM flattens every grade at a length and longer to the top price (set it to 13 to
+  lock 13, 14, 15, 16). Grade is equalized, length wins, so those lengths never trim. It is
+  the belt-and-suspenders for the two-grade jump that pricing alone cannot stop.
+- Tiers can be tied (several grades at one price) so the optimizer never trims between them.
 
 ## Only ratios matter
 

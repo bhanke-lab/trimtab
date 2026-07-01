@@ -4,22 +4,23 @@ Trim Decision Pricing Model (scalable-model)
 Reads a Comact TrimExpert AllProducts.xml export and builds, per species + thickness,
 a single value ladder of the grades the Comact runs, plus the trim decision matrix.
 
-How it works:
-- Each species is one ordered ladder of TIERS, highest value first.
-- A tier holds one or more grades. Grades in the same tier are TIED: same price, so
-  the Comact never trims between them.
-- The Comact is pure value: a trim fires on any positive gain (rule is strict > 0).
-- Only ratios matter (scale cancels). The ORDER and the TIES are the policy; the gap
-  sizes are just the lever you tune to place the trims.
-- Flat tiers carry no even/odd variance, so they make no even-length trims.
+Everything is done through the PRICES, because the price grid is the only thing the Comact
+consumes. There is no decision-side rule: the trim matrix is pure value, exactly what the
+Comact does with these prices. So the two protections below are built into the numbers:
 
-Global rule: 1 Common never trims up to Select. Select is tied into the 1 Common tier
-(you only get a Select if the board lays a Select), so no trim fires between them.
+- Even-length protection is a consequence of GAP. As long as each one-grade price step stays
+  in the safe band, no even board out-values a shorter odd board one grade up, so a 14 or 16
+  never trims down to a 13 or 15. See GAP below.
+- Freezing the long lengths (13+) is done by flattening their prices: FREEZE_FROM sets every
+  grade at those lengths to the top price, so length wins and grade gives no reason to trim.
 
-Adjustability: everything is data. To change a price gap, edit a tier value. To move a
-grade, move its name to another tier. To add back an excluded grade (quarter sawn, fas
-10in, the white/brown maple sorts, etc.), put its name in a tier and un-comment the
-matching line in that species' parser.
+Each species is one ordered ladder of tiers, highest value first. A tier holds one or more
+grades; grades in the same tier are tied (same price), so the Comact never trims between them.
+Global rule: Select is tied into the 1 Common tier, so 1 Common never trims up to Select.
+
+Adjustability: tiers are data (order + ties + which lengths carry variance). Tune trims with
+GAP, ODD_DISCOUNT, SIX_DISCOUNT, and FREEZE_FROM. Add back an excluded grade by putting its
+name in a tier and un-commenting one line in that species' parser.
 """
 import xml.etree.ElementTree as ET
 import csv
@@ -29,92 +30,100 @@ from collections import defaultdict
 ODD_DISCOUNT = 0.06   # even/odd lever for variance tiers. MUST stay < 1/15 = 0.0667.
 SIX_DISCOUNT = 0.09   # 6' low-point discount on variance tiers
 MARGIN       = 0.0    # pure value: any positive gain upgrades. 0 matches the Comact.
+
+# GAP is the one-grade price step: each tier is priced at GAP x the tier above it.
+# It is the even-length protection. Keep it in the band below:
+#   * GAP >= 0.882  so a 16 (or 14) never out-trims to a shorter odd one grade up.
+#   * GAP <= 0.912  so the odd upgrades at 9/11/13/15 still fire.
+# 0.89 sits in the middle (about a 12.4% one-grade gap).
+GAP = 0.89
+
+# FREEZE_FROM: set to a length (e.g. 13) to flatten every grade at that length and longer to
+# the top price. Those lengths then never trim (length wins, grade is equalized). None = off.
+FREEZE_FROM = 13
+
 LENGTHS = list(range(6, 17))
 
-# Each ladder: list of tiers, HIGHEST value first.
-# tier = (relative_value, has_even_odd_variance, [grade names]).  Same tier = tied price.
-# Values are relative placeholders; tune the gaps. Order + ties are the canonical policy.
+# Each ladder: list of tiers, HIGHEST value first.  tier = (has_even_odd_variance, [grade names]).
+# Same tier = tied price. Prices are generated from GAP, so only the ORDER and the TIES live here.
 
 # ---- Hard maple: no 1W / 2W / FAS Brown (excluded). Sap and unselected on one ladder. ----
 HMW = [
-    (1.00, True,  ['FAS S']),
-    (0.88, True,  ['1 Common']),                 # 1 Common unselected
-    (0.78, True,  ['Sap Select', '1 Common Sap']),
-    (0.68, True,  ['2 Common Sap']),
-    (0.60, True,  ['3A Sap']),                   # no raw grade in export yet; kept for later
-    (0.48, False, ['1 Common Brown', '2 Common', '3A Common', '3B Common', 'Subgrade']),
+    (True,  ['FAS S']),
+    (True,  ['1 Common']),                 # 1 Common unselected
+    (True,  ['Sap Select', '1 Common Sap']),
+    (True,  ['2 Common Sap']),
+    (True,  ['3A Sap']),                   # no raw grade in export yet; kept for later
+    (True, ['1 Common Brown', '2 Common', '3A Common', '3B Common', 'Subgrade']),
 ]
 
-# ---- Soft maple: same as hard maple, plus plain Select (tied to 1 Common) and Wormy
-#      (between 2 Common Sap and 3A Sap). ----
+# ---- Soft maple: hard maple plus plain Select (tied to 1 Common) and Wormy (between
+#      2 Common Sap and 3A Sap). ----
 SMA = [
-    (1.00, True,  ['FAS S']),
-    (0.88, True,  ['1 Common', 'Select']),
-    (0.78, True,  ['Sap Select', '1 Common Sap']),
-    (0.68, True,  ['2 Common Sap']),
-    (0.63, True,  ['Wormy']),
-    (0.60, True,  ['3A Sap']),                   # no raw grade in export yet; kept for later
-    (0.48, False, ['1 Common Brown', '2 Common', '3A Common', '3B Common', 'Subgrade']),
+    (True,  ['FAS S']),
+    (True,  ['1 Common', 'Select']),
+    (True,  ['Sap Select', '1 Common Sap']),
+    (True,  ['2 Common Sap']),
+    (True,  ['Wormy']),
+    (True,  ['3A Sap']),                   # no raw grade in export yet; kept for later
+    (True, ['1 Common Brown', '2 Common', '3A Common', '3B Common', 'Subgrade']),
 ]
 
 # ---- Ash: no color sort. All color grades collapse to their base grade. ----
 ASH = [
-    (1.00, True,  ['FAS']),
-    (0.88, True,  ['1 Common', 'Select']),
-    (0.72, True,  ['2 Common']),
-    (0.56, True,  ['3A Common']),
-    (0.48, False, ['3B Common']),
-    (0.42, False, ['Subgrade']),                 # SG
-    (0.36, False, ['Pallet']),                   # no raw grade in export yet; kept for later
+    (True,  ['FAS']),
+    (True,  ['1 Common', 'Select']),
+    (True,  ['2 Common']),
+    (True,  ['3A Common']),
+    (True, ['3B Common']),
+    (True, ['Subgrade']),                 # SG
+    (True, ['Pallet']),                   # no raw grade in export yet; kept for later
 ]
 
-# ---- Cherry: heartwood on top. Sap is not wanted, so sap prices into the 1 Common tier. ----
+# ---- Cherry: heartwood on top. Sap is not wanted, so it prices into the 1 Common tier. ----
 CHERRY = [
-    (1.00, True,  ['FAS 90-50', 'FAS Red']),
-    (0.85, True,  ['Select 90-50', '1 Common 90-50', '1 Common', 'Select', 'FAS Sap', 'Sap Select']),
-    (0.70, True,  ['2 Common']),
-    (0.56, True,  ['3A Common']),
-    (0.48, False, ['Subgrade']),                 # SG
-    (0.42, False, ['3B Common', 'Pallet']),
+    (True,  ['FAS 90-50', 'FAS Red']),
+    (True,  ['Select 90-50', '1 Common 90-50', '1 Common', 'Select', 'FAS Sap']),
+    (True,  ['2 Common']),
+    (True,  ['3A Common']),
+    (True, ['Subgrade']),                 # SG
+    (True, ['3B Common', 'Pallet']),
 ]
 
 # ---- Red oak: no color sort, no quarter sawn, no fas 10in (excluded). ----
 ROK = [
-    (1.00, True,  ['FAS', 'FAS Stain']),
-    (0.87, True,  ['1 Common', 'Select']),
-    (0.80, True,  ['1&2 Common']),
-    (0.72, True,  ['2 Common']),
-    (0.56, True,  ['3A Common']),
-    (0.46, False, ['3B Common', 'Subgrade']),
+    (True,  ['FAS', 'FAS Stain']),
+    (True,  ['1 Common', 'Select']),
+    (True,  ['1&2 Common']),
+    (True,  ['2 Common']),
+    (True,  ['3A Common']),
+    (True, ['3B Common', 'Subgrade']),
 ]
 
 # ---- White oak: like red oak, plus Character between 2 Common and 3A. ----
 WOK = [
-    (1.00, True,  ['FAS', 'FAS Stain']),
-    (0.87, True,  ['1 Common', 'Select']),
-    (0.72, True,  ['2 Common']),
-    (0.64, True,  ['Character']),
-    (0.56, True,  ['3A Common']),
-    (0.46, False, ['3B Common', 'Subgrade']),
+    (True,  ['FAS', 'FAS Stain']),
+    (True,  ['1 Common', 'Select']),
+    (True,  ['2 Common']),
+    (True,  ['Character']),
+    (True,  ['3A Common']),
+    (True, ['3B Common', 'Subgrade']),
 ]
 
 # ---- Walnut: keep everything, do not want to trim. All tiers flat (no even-length trims).
 #      No subgrade. ----
 WALNUT = [
-    (1.00, False, ['FAS']),
-    (0.90, False, ['1 Common', 'Select']),
-    (0.80, False, ['2 Common']),
-    (0.70, False, ['3A Common']),
-    (0.62, False, ['3B Common']),
+    # One tied price for every grade: nothing to gain by trimming, so walnut never trims.
+    (True, ['FAS', '1 Common', 'Select', '2 Common', '3A Common', '3B Common']),
 ]
 
 # ---- Basswood / birch / tulip: simple, no subgrade. ----
 PLAIN = [
-    (1.00, True,  ['FAS']),
-    (0.87, True,  ['1 Common', 'Select']),
-    (0.72, True,  ['2 Common']),
-    (0.56, True,  ['3A Common']),
-    (0.48, False, ['3B Common']),
+    (True,  ['FAS']),
+    (True,  ['1 Common', 'Select']),
+    (True,  ['2 Common']),
+    (True,  ['3A Common']),
+    (True, ['3B Common']),
 ]
 
 
@@ -176,7 +185,7 @@ def canon_cherry(g):
     if g.startswith('FASSAP'):   return 'FAS Sap'
     if g.startswith('FAS'):      return None
     if g.startswith('SEL9050'):  return 'Select 90-50'
-    if g.startswith('SEL') and 'SAP' in g: return 'Sap Select'
+    if g.startswith('SEL') and 'SAP' in g: return 'FAS Sap'   # sap select prices with the sap tier
     if g.startswith('SEL'):      return 'Select'
     if g.startswith('1COM9050'): return '1 Common 90-50'
     if g.startswith('1COM'):     return '1 Common'
@@ -268,13 +277,14 @@ def load_raw(path):
     return combo
 
 def tiers_for(combo, species, thick):
-    """Return the present tiers as [{value, variance, names:[present grades]}], highest first."""
+    """Return the present tiers as [{value, variance, names}], highest first. Prices come
+    from GAP: the top present tier is 1.0, each lower present tier is GAP x the one above."""
     spec = SPECIES.get(species)
     if not spec: return []
     ladder, canon = spec
     raw = combo.get((species, thick), set())
     name_to_tier = {}
-    for i, (v, var, names) in enumerate(ladder):
+    for i, (var, names) in enumerate(ladder):
         for n in names: name_to_tier[n] = i
     present = defaultdict(list)
     for g in raw:
@@ -282,16 +292,19 @@ def tiers_for(combo, species, thick):
         if nm is None or nm not in name_to_tier: continue
         idx = name_to_tier[nm]
         if nm not in present[idx]: present[idx].append(nm)
-    tiers = []
-    for i, (v, var, names) in enumerate(ladder):
+    tiers, rank = [], 0
+    for i, (var, names) in enumerate(ladder):
         if i in present:
             ordered = [n for n in names if n in present[i]]
-            tiers.append({'value': v, 'variance': var, 'names': ordered})
+            tiers.append({'value': GAP ** rank, 'variance': var, 'names': ordered})
+            rank += 1
     return tiers
 
 def price(tier, L, scale=1.0):
+    if FREEZE_FROM is not None and L >= FREEZE_FROM:
+        return 1.0 * scale                            # frozen: flat top price -> length wins, no trim
     base = tier['value'] * scale
-    if not tier['variance']: return base          # flat: same $/MBF every length
+    if not tier['variance']: return base              # flat: same $/MBF every length
     if L == 6: return base * (1 - SIX_DISCOUNT)
     if L % 2 == 0: return base
     return base * (1 - ODD_DISCOUNT)
@@ -300,8 +313,8 @@ def board_value(tier, L, scale=1.0, width=12, thick_dec=1.0):
     return price(tier, L, scale) / 1000 * thick_dec * width * L / 12
 
 def decision_blocks(tiers, margin=MARGIN, width=12, thick_dec=1.0):
-    """Pure-value trims along the single ladder: a lower tier climbs to a higher tier
-    when the shorter board at the higher tier is worth more."""
+    """Pure value, exactly what the Comact does with these prices: a lower tier climbs to a
+    higher tier when the shorter board at the higher tier is worth more."""
     def bv(t, L): return board_value(t, L, 1.0, width, thick_dec)
     def reds(cur, up):
         return [L for L in range(7, 17) if (bv(up, L-1) - bv(cur, L)) / bv(cur, L) > margin]

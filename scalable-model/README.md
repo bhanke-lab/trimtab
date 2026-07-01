@@ -14,13 +14,13 @@ Python 3.8 or newer, standard library only. No pip packages and no requirements.
 
 ## Run
 
-    python3 trim_model.py path/to/AllProducts.xml      # macOS / Linux
-    py trim_model.py path/to/AllProducts.xml           # Windows
+    python3 scalable-model/trim_model.py path/to/AllProducts.xml      # macOS / Linux
+    py scalable-model/trim_model.py path/to/AllProducts.xml           # Windows
 
 Name a species and thickness to target one combo, or omit them to auto-pick the
 combo with the most grades:
 
-    py trim_model.py path/to/AllProducts.xml TUL 4/4
+    py scalable-model/trim_model.py path/to/AllProducts.xml TUL 4/4
 
 Writes a sample CSV and prints every species/thickness grade ladder.
 

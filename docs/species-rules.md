@@ -1,65 +1,98 @@
 # Species rules
 
-Every species is checked against the grades it actually runs in the export and against the
-NHLA color and sort conventions. One principle governs all of them: trimming climbs the
-standard grade ladder (FAS, Select, 1 Common, 2 Common, 3A, 3B, Below Grade) within a single
-sort. It never moves a board across a color or sort class, because trimming changes length and
-cuttings, not the wood's color or sawing pattern.
+Each species is one value ladder, highest value first. A tier holds one or more grades; grades
+in the same tier are tied (same price), so the optimizer never trims between them. Trimming is
+pure value: a board climbs the ladder when the shorter board at a higher tier is worth more.
+Flat tiers carry no even/odd variance, so they make no even-length trims. Only ratios matter;
+the order and the ties are the policy, the gap sizes are the lever.
 
-## White-sorted species (sapwood is the premium)
+Global rule: 1 Common never trims up to Select. Select is tied into the 1 Common tier, so a
+Select is only called when the board lays a Select.
 
-Hard Maple, Soft Maple, Ash, Birch. White sapwood is the desirable color.
+## Hard maple
 
-Color classes, high to low:
+Excludes No.1 White, No.2 White, and FAS Brown.
 
-- No.1 White: both faces and edges of the clear cuttings are all sapwood.
-- No.2 White: one face and both edges sapwood, reverse at least 50 percent sapwood.
-- Sap and Better: at least one sapwood face in the cuttings.
-- Brown: the white removed, the leftover heartwood (a mill term, not a standard grade).
-- Unselected: graded with no color consideration.
+1. FAS Sap
+2. 1 Common (unselected)
+3. Sap Select = 1 Common Sap
+4. 2 Common Sap
+5. 3A Sap
+6. Flat bottom, all tied: 1 Common Brown = 2 Common = 3A = 3B = Subgrade
 
-Rules:
+## Soft maple
 
-- Each color class is its own trim stream. Trimming climbs the standard grade within a class
-  only, never across color.
-- The brown and low tier, and SG/Pallet, carry no even/odd variance, so they make no
-  even-length trims.
-- Soft Maple adds a Wormy grade in the low block.
+Hard maple's ladder, plus Wormy between 2 Common Sap and 3A Sap, and a plain Select tied into
+the 1 Common tier.
 
-Ash runs the full set (FAS and Select in 1 White, 2 White, Sap, Brown, plus plain and the common
-grades), so it uses this framework. Birch in the current export is plain only and uses the
-generic ladder until white grades appear.
+## Ash
 
-## Heartwood-sorted species (heartwood is the premium)
+No color sort. Every color grade folds to its base grade.
 
-Cherry, Oak, Walnut. The color preference is reversed: heartwood, not sapwood, carries value.
+1. FAS
+2. 1 Common = Select
+3. 2 Common
+4. 3A Common
+5. 3B Common (flat)
+6. Subgrade (flat)
+7. Pallet (flat)
 
-Cherry: sorted by heartwood content, commonly the 90/50 spec (about 90 percent heartwood on one
-face, 50 percent on the reverse). Classes high to low: Red / 90-50 heartwood, then Sap, then
-Unselected, with Veneer above. Each is its own stream.
+## Cherry
 
-Oak (red and white): color is not the sort. Flat-sawn is graded standard, with some mineral stain
-allowed and excessive stain dropping a board one grade. These are separate parallel products,
-each its own stream with no trimming across:
+Heartwood on top. Sap is priced into the 1 Common tier (sap is not wanted as a premium).
 
-- Quarter Sawn: a sawing pattern, premium, minimum width reduced.
-- Stain: mineral-stain grades, lower.
-- Character: knotty grade, lower.
-The plain flat-sawn standard grades are the main ladder.
+1. FAS 90-50 = FAS Red
+2. Select 90-50 = 1 Common 90-50 = 1 Common = Select = FAS Sap
+3. 2 Common
+4. 3A Common
+5. Subgrade (flat)
+6. 3B = Pallet (flat)
 
-Walnut: heartwood is the premium. The FAS rules are relaxed to admit shorter boards (6 and 7
-feet) and narrower widths. The short FAS is a length-eligibility variant of FAS, not a separate
-value class, so it prices as FAS. Otherwise the generic ladder applies.
+## Red oak
 
-## Plain species (generic ladder)
+No color sort, no quarter sawn, no FAS 10in.
 
-Basswood and Tulip Poplar run plain grades only. The generic ladder applies: standard grade
-trims, flat at SG/Pallet, no color streams.
+1. FAS = FAS Stain
+2. 1 Common = Select
+3. 1&2 Common
+4. 2 Common
+5. 3A Common
+6. 3B = Subgrade (flat)
 
-## Status
+## White oak
 
-All of the sorted species are wired and validated: hard and soft maple, ash (white streams),
-cherry (heartwood streams), and red and white oak (plain ladder plus quarter sawn, stain, and
-character as parallel sorts). The relative values are placeholders; only the equalities, the
-flatten points, and the stream walls are fixed. Set real per-grade values by editing each
-species table.
+Red oak's ladder, plus Character between 2 Common and 3A.
+
+1. FAS = FAS Stain
+2. 1 Common = Select
+3. 2 Common
+4. Character
+5. 3A Common
+6. 3B = Subgrade (flat)
+
+## Walnut
+
+Keep everything, minimal trimming. Every tier is flat, so no even-length trims. No subgrade.
+
+1. FAS
+2. 1 Common = Select
+3. 2 Common
+4. 3A Common
+5. 3B Common
+
+## Basswood, birch, tulip
+
+Simple, no subgrade.
+
+1. FAS
+2. 1 Common = Select
+3. 2 Common
+4. 3A Common
+5. 3B Common (flat)
+
+## Adjustability
+
+Everything is data in trim_model.py. Change a gap by editing a tier value, move a grade by
+moving its name, and add back an excluded grade (quarter sawn, FAS 10in, the white or brown
+maple sorts) by putting its name in a tier and un-commenting one line in that species' parser.
+The values are relative placeholders pending final tuning.

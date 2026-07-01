@@ -57,11 +57,20 @@ The scalable-model tool puts the same logic in code:
 - ODD_DISCOUNT sets the even/odd gap. It has to stay under 1/15 = 0.0667, or a
   15 ft board trims to 14 ft inside its own grade and the even-protection rule
   fails.
-- MARGIN is the 20 to 25 percent style threshold. A trim only fires when the gain
-  clears MARGIN percent of the current board value, so marginal moves stay dark.
+- The decision rule is pure value: a trim fires on any positive gain, because the
+  Comact upgrades whenever a solution is worth even a cent more. The 20 to 25
+  percent is not a decision filter, it is the gap you build into the grade levels so
+  the trade clears after surface measure loss. You steer trims with the prices.
 - FLATTEN_AT drops the even/odd gap to zero for the bottom grades. Once into 3B,
   SG, or pallet the price variance goes away and the floor does not trim for even
   lengths.
+
+## Only ratios matter
+
+The optimizer compares dollar values, so multiplying every price by a constant changes
+no decision. The absolute scale is arbitrary. Set the top grade to any convenient number,
+then tune the gaps between grades and the even/odd lever. The ratios and balances are the
+whole policy. The reported dollar figures do not affect which board trims.
 
 ## Basis
 

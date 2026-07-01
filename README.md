@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="docs/images/logo.png" alt="Trim Decision Tools" width="180">
+  <img src="docs/images/logo.png" alt="trimtab" width="180">
 </p>
 
-<h1 align="center">Trim Decision Tools</h1>
+<h1 align="center">trimtab</h1>
 
-<p align="center">see the whole decision</p>
+<p align="center">steer the ship</p>
 
 <p align="center">
-  <img alt="commits" src="https://img.shields.io/github/commit-activity/t/bhanke-lab/trim-decision-tools?label=commits">
-  <img alt="last commit" src="https://img.shields.io/github/last-commit/bhanke-lab/trim-decision-tools">
+  <img alt="commits" src="https://img.shields.io/github/commit-activity/t/bhanke-lab/trimtab?label=commits">
+  <img alt="last commit" src="https://img.shields.io/github/last-commit/bhanke-lab/trimtab">
   <img alt="license" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue">
 </p>
 

@@ -31,16 +31,16 @@ Excel workbooks are zipped binaries, so Git can't diff them. This repo ships the
 <table width="100%">
   <tr>
     <td align="center" width="33%">
-      <img src="docs/images/value-table.png" alt="Value Table" width="100%"><br>
-      <sub><em>Plain price lookup</em></sub>
+      <img src="docs/images/value-table.png" alt="Value Table" width="90%"><br>
+      <sub><em>Plain value table visualization</em></sub>
     </td>
     <td align="center" width="33%">
       <img src="docs/images/lengths-value-table.png" alt="Lengths Value Table" width="100%"><br>
-      <sub><em>Length zones and even/odd levers</em></sub>
+      <sub><em>Add length zones and even/odd levers</em></sub>
     </td>
     <td align="center" width="33%">
       <img src="docs/images/manual-lengths-value-table.png" alt="Manual Lengths Value Table" width="100%"><br>
-      <sub><em>Hand-typed even/odd figures</em></sub>
+      <sub><em>Add input for custom even/odd figures</em></sub>
     </td>
   </tr>
 </table>
@@ -56,7 +56,7 @@ Lookup and decision tool over a Comact TrimExpert export.
 | Lengths Value Table (Manual) | Same engine, even/odd block is hand-typeable | Visible |
 | RawData | Power Query dump, one row per Board record | Visible |
 | Helpers | Thickness decimals, species names, width and length tokens | Visible |
-| _Formulas_Backup / _LengthsBackup / _ManualBackup | Golden formula copies for RESET | Hidden |
+| _Formulas_Backup / _LengthsBackup /_ManualBackup | Golden formula copies for RESET | Hidden |
 
 ### Rebuild steps
 
@@ -81,11 +81,11 @@ Lookup and decision tool over a Comact TrimExpert export.
   <tr>
     <td align="center" width="50%">
       <img src="docs/images/trim_model_result.png" alt="Trim model result" width="100%"><br>
-      <sub><em>Generated price grid and decision matrix</em></sub>
+      <sub><em>Generated price grid and decision matrix for chosen species + thickness</em></sub>
     </td>
     <td align="center" width="50%">
       <img src="docs/images/trim_model_output.png" alt="Trim model output" width="100%"><br>
-      <sub><em>Terminal output for the chosen combo</em></sub>
+      <sub><em>Resultant visualization of trim decisions from model</em></sub>
     </td>
   </tr>
 </table>
@@ -117,7 +117,7 @@ Writes a sample CSV and prints every species and thickness grade ladder.
 
 <p align="center">
   <img src="docs/images/sim-comparison.png" alt="Sim Comparison" width="600"><br>
-  <sub><em>Two runs compared grade by grade and length by length</em></sub>
+  <sub><em>Variety of comparison metrics for 2 simulations with up to 10 stored</em></sub>
 </p>
 
 Compares board-foot output between two Comact trimmer simulation runs, grade by grade and length by length. Use it to value a pricing or trim-rule change before committing it to the optimizer.

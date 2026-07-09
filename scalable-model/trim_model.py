@@ -21,6 +21,16 @@ Global rule: Select is tied into the 1 Common tier, so 1 Common never trims up t
 Adjustability: tiers are data (order + ties + which lengths carry variance). Tune trims with
 GAP, ODD_DISCOUNT, SIX_DISCOUNT, and FREEZE_FROM. Add back an excluded grade by putting its
 name in a tier and un-commenting one line in that species' parser.
+
+Batch mode
+----------
+    py trim_model.py AllProducts.xml --all --max-length 12 --thickness 4/4 6/4
+
+Writes one .xlsx (default trim_models.xlsx) with a formatted visualizer sheet per
+species x thickness, matching the floor visualizer layout: price/1000 grid, $/board
+grid with SM row, and the three decision blocks with red conditional highlighting
+(any positive gain = the trim fires). Single-combo CSV mode still works:
+    py trim_model.py AllProducts.xml TUL 4/4
 """
 import xml.etree.ElementTree as ET
 import csv
@@ -43,6 +53,11 @@ GAP = 0.89
 FREEZE_FROM = None
 
 LENGTHS = list(range(6, 17))
+
+# Visualizer grid: fixed number of grade slots per sheet. Unused slots render as the
+# yellow "0" rows, and they are what generates the always-red subgrade-escape rows in
+# the 1 Grade / 2 Grades blocks (value of the tier above minus zero).
+GRADE_SLOTS = 9
 
 # Each ladder: list of tiers, HIGHEST value first.  tier = (has_even_odd_variance, [grade names]).
 # Same tier = tied price. Prices are generated from GAP, so only the ORDER and the TIES live here.
@@ -348,13 +363,274 @@ def write_report_csv(combo, species, thick, path, scale=600.0, width=12):
         csv.writer(f).writerows(rows)
     return labels
 
+# ============================ XLSX VISUALIZER (batch mode) ============================
+# One formatted sheet per species x thickness, matching the floor visualizer:
+#   A1  title, price/1000 grid, black divider, $/board grid with SM row and the yellow
+#   zero slots, then the three decision blocks to the right with red highlighting on any
+#   positive gain (red = the trim fires), and the Ideal State Map box.
+# All prices are ROUNDED to whole $/MBF first and every $/board and gain figure is
+# computed from the rounded price, so the workbook matches what the grid displays.
+
+def thick_decimal(thick):
+    try:
+        num, den = thick.split('/')
+        return float(num) / float(den)
+    except (ValueError, ZeroDivisionError):
+        return 1.0
+
+def write_workbook(combo, out_path, species_list, thicknesses, max_length=16,
+                   width=8, scale=600.0, apply_thickness=True):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.formatting.rule import CellIsRule
+    from openpyxl.utils import get_column_letter
+
+    YELLOW = PatternFill('solid', start_color='FFFF00')
+    # For conditional-format (dxf) fills Excel uses the BACKGROUND color of a
+    # solid fill, so both start_color and end_color must be set or real Excel
+    # renders no highlight (previews/LibreOffice show fgColor and look fine).
+    RED     = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+    RED_FONT = Font(color='9C0006')                       # dark red, matches Excel "Bad"
+    THIN   = Side(style='thin', color='000000')
+    THICK  = Side(style='medium', color='000000')
+    BOX    = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+    CENTER = Alignment(horizontal='center')
+    FMT_PRICE = '0'
+    FMT_BOARD = '0.00" $"'
+    FMT_SAME  = '"$"0.000;-"$"0.000'
+    FMT_GAIN  = '"$"0.00;-"$"0.00'
+
+    # ---- fonts: change these to restyle the whole workbook ----
+    FONT_NAME = 'Aptos Narrow'
+    BODY  = Font(name=FONT_NAME, size=11)                 # everything not listed below
+    BOLD  = Font(name=FONT_NAME, size=11, bold=True)      # yellow grade/length rows
+    HDR   = Font(name=FONT_NAME, size=14)                 # section headers
+    HDR_B = Font(name=FONT_NAME, size=14, bold=True)
+    TITLE = Font(name=FONT_NAME, size=20, bold=True)      # 'SMA 4/4' title
+
+    def rich(ws, row, col, bold_part, rest):
+        cell = ws.cell(row=row, column=col)
+        cell.font = HDR
+        try:
+            from openpyxl.cell.rich_text import CellRichText, TextBlock
+            from openpyxl.cell.text import InlineFont
+            cell.value = CellRichText(
+                TextBlock(InlineFont(rFont=FONT_NAME, sz=14, b=True), bold_part), rest)
+        except Exception:
+            cell.value = bold_part + rest
+            cell.font = HDR_B
+        return cell
+
+    lengths = list(range(6, max_length + 1))
+    trims   = list(range(7, max_length + 1))      # trim-from lengths (right blocks)
+    n_len   = len(lengths)
+    c_label = 1                                    # column A
+    c_len0  = 2                                    # first length column (B)
+    c_r0    = c_len0 + n_len + 1                   # right block start (gap column between)
+
+    # fixed row skeleton (matches the visualizer)
+    R_TITLE, R_PLBL, R_PHDR, R_P0 = 1, 4, 5, 6     # price table starts at row 6
+    R_SEP  = 14                                    # black divider band
+    R_WID, R_LEN, R_SM, R_G0 = 16, 17, 18, 19      # $/board table, 9 grade slots 19..27
+    R_SG_H, R_SG0 = 2, 3                           # same grade: header + 9 rows (3..11)
+    R_U1_H, R_U10 = 13, 14                         # 1 grade:    header + 8 rows (14..21)
+    R_U2_H, R_U20 = 22, 23                         # 2 grades:   header + 7 rows (23..29)
+    R_MAP_H, R_MAP0 = 30, 31                       # ideal state map: header + 3 rows
+
+    wb = Workbook()
+    try:
+        wb._named_styles['Normal'].font = BODY   # workbook-wide default (body) font
+    except Exception:
+        pass
+    wb.remove(wb.active)
+    written = []
+
+    for species in species_list:
+        for thick in thicknesses:
+            tiers = tiers_for(combo, species, thick)
+            if not tiers:
+                continue
+            tdec = thick_decimal(thick) if apply_thickness else 1.0
+            ws = wb.create_sheet(f"{species} {thick.replace('/', '-')}")
+            ws.column_dimensions['A'].width = 30
+            for i in range(n_len):
+                ws.column_dimensions[get_column_letter(c_len0 + i)].width = 8.5
+            ws.column_dimensions[get_column_letter(c_len0 + n_len)].width = 3
+            for i in range(len(trims)):
+                ws.column_dimensions[get_column_letter(c_r0 + i)].width = 10
+
+            # rounded $/MBF per tier slot, then $/board from the rounded price
+            p = [{L: round(price(t, L, scale)) for L in lengths} for t in tiers]
+            def bv(slot, L):
+                if slot < 0 or slot >= len(tiers): return 0.0
+                return p[slot][L] / 1000.0 * tdec * width * L / 12.0
+            labels = [' / '.join(t['names']) for t in tiers]
+
+            # ---- title ----
+            c_mid = c_len0 + max(n_len // 2 - 1, 0)   # ~centered over the table (D for 6-12)
+            tc = ws.cell(row=R_TITLE, column=c_mid, value=f'{species} {thick}')
+            tc.font = TITLE; tc.alignment = CENTER
+
+            # ---- price/1000 table ----
+            lc = ws.cell(row=R_PLBL, column=c_mid, value='price/1000')
+            lc.alignment = CENTER
+            h = ws.cell(row=R_PHDR, column=c_label, value='Grade')
+            h.fill = YELLOW; h.font = BOLD; h.border = BOX
+            for i, L in enumerate(lengths):
+                c = ws.cell(row=R_PHDR, column=c_len0 + i, value=L)
+                c.fill = YELLOW; c.font = BOLD; c.border = BOX; c.alignment = CENTER
+            for r, t in enumerate(tiers):
+                lab = ws.cell(row=R_P0 + r, column=c_label, value=labels[r])
+                lab.fill = YELLOW; lab.border = BOX
+                lab.alignment = Alignment(wrap_text=True, vertical='center')
+                if len(labels[r]) > 34: ws.row_dimensions[R_P0 + r].height = 27
+                for i, L in enumerate(lengths):
+                    c = ws.cell(row=R_P0 + r, column=c_len0 + i, value=p[r][L])
+                    c.number_format = FMT_PRICE; c.border = BOX
+
+            # ---- divider: bold border along the top of the $/board table ----
+            for col in range(c_label, c_len0 + n_len):
+                ws.cell(row=R_SEP + 1, column=col).border = Border(top=THICK)
+
+            # ---- $/board table ----
+            ws.cell(row=R_WID, column=c_len0 + 2, value='width').alignment = CENTER
+            ws.cell(row=R_WID, column=c_len0 + 3, value=f"{width:g}.''").alignment = CENTER
+            h = ws.cell(row=R_LEN, column=c_label, value='length')
+            h.fill = YELLOW; h.font = BOLD; h.border = BOX
+            for i, L in enumerate(lengths):
+                c = ws.cell(row=R_LEN, column=c_len0 + i, value=L)
+                c.fill = YELLOW; c.font = BOLD; c.border = BOX; c.alignment = CENTER
+            s = ws.cell(row=R_SM, column=c_label, value='SM')
+            s.fill = YELLOW; s.border = BOX
+            for i, L in enumerate(lengths):
+                c = ws.cell(row=R_SM, column=c_len0 + i, value=round(width * L / 12))
+                c.border = BOX; c.alignment = CENTER
+            for slot in range(GRADE_SLOTS):
+                row = R_G0 + slot
+                lab = ws.cell(row=row, column=c_label,
+                              value=labels[slot] if slot < len(tiers) else 0)
+                lab.fill = YELLOW; lab.border = BOX
+                lab.alignment = Alignment(wrap_text=True, vertical='center')
+                if slot < len(tiers) and len(labels[slot]) > 34:
+                    ws.row_dimensions[row].height = 27
+                for i, L in enumerate(lengths):
+                    # full precision, displayed as 2 decimals: the decision
+                    # formulas depend on the unrounded values (goal shows -$0.448)
+                    c = ws.cell(row=row, column=c_len0 + i, value=bv(slot, L))
+                    c.number_format = FMT_BOARD; c.border = BOX
+
+            # ---- decision blocks ----
+            # Decision cells are live formulas against the $/board grid, like the
+            # original visualizer: keep at L (col of L-1, same grade row) minus
+            # trim to L-1 at a grade `up` slots better (row R_G0+j+up, col of L).
+            def block(hdr_row, row0, n_rows, bold_part, rest, fmt, up):
+                rich(ws, hdr_row, c_r0, bold_part, rest)
+                for j in range(n_rows):
+                    for i, L in enumerate(trims):
+                        keep = f'{get_column_letter(c_len0 + L - 1 - lengths[0])}{R_G0 + j}'
+                        trim = f'{get_column_letter(c_len0 + L - lengths[0])}{R_G0 + j + up}'
+                        c = ws.cell(row=row0 + j, column=c_r0 + i,
+                                    value=f'={keep}-{trim}')
+                        c.number_format = fmt; c.border = BOX
+                first = f'{get_column_letter(c_r0)}{row0}'
+                last  = f'{get_column_letter(c_r0 + len(trims) - 1)}{row0 + n_rows - 1}'
+                ws.conditional_formatting.add(
+                    f'{first}:{last}',
+                    CellIsRule(operator='greaterThan', formula=['0'],
+                               fill=RED, font=RED_FONT))
+
+            block(R_SG_H, R_SG0, GRADE_SLOTS,
+                  'Price in same Grade', ' (red will trim in same grade category)',
+                  FMT_SAME, 0)
+            block(R_U1_H, R_U10, GRADE_SLOTS - 1,
+                  '1 Grade', " - Red will trim 1' to upgrade a single grade",
+                  FMT_GAIN, 1)
+            block(R_U2_H, R_U20, GRADE_SLOTS - 2,
+                  '2 Grades', " - Red will trim 1' to recover 2 grades",
+                  FMT_GAIN, 2)
+
+            # ---- ideal state map ----
+            mh = ws.cell(row=R_MAP_H, column=c_r0, value='Ideal State Map')
+            mh.font = HDR_B
+            odd_up = [L for L in trims if L % 2 == 1 and L >= 9]   # 9/11/13/15 odd upgrades
+            for j in range(2):
+                for i, L in enumerate(trims):
+                    if L in odd_up:
+                        c = ws.cell(row=R_MAP0 + j, column=c_r0 + i, value=0.01)
+                        c.number_format = FMT_GAIN; c.fill = RED
+            for i, L in enumerate(trims):
+                c = ws.cell(row=R_MAP0 + 2, column=c_r0 + i, value=0.01)
+                c.number_format = FMT_GAIN; c.fill = RED
+            for row in range(R_MAP_H, R_MAP0 + 3):
+                for col in range(c_r0, c_r0 + len(trims)):
+                    cell = ws.cell(row=row, column=col)
+                    b = {'left': THIN, 'right': THIN, 'top': THIN, 'bottom': THIN}
+                    if row == R_MAP_H: b['top'] = THICK
+                    if row == R_MAP0 + 2: b['bottom'] = THICK
+                    if col == c_r0: b['left'] = THICK
+                    if col == c_r0 + len(trims) - 1: b['right'] = THICK
+                    cell.border = Border(**{k: v for k, v in b.items()})
+
+            # ---- font normalization ----
+            # Cells with any direct format (border, number format, fill) get their
+            # own style record pinned to font 0 (Calibri); real Excel uses that
+            # instead of the Normal-style default. Stamp the body font on every
+            # written cell that wasn't given an explicit Aptos font above.
+            for xrow in ws.iter_rows():
+                for xc in xrow:
+                    if xc.font is None or xc.font.name != FONT_NAME:
+                        xc.font = BODY
+
+            written.append(f'{species} {thick}')
+
+    if not written:
+        return []
+    wb.save(out_path)
+    return written
+
 if __name__ == '__main__':
-    import sys
-    args = sys.argv[1:]
-    xml_path = args[0] if len(args) >= 1 else 'allproducts.xml'
-    combo = load_raw(xml_path)
-    if len(args) >= 3:
-        species, thick = args[1], args[2]
+    import argparse, sys
+    ap = argparse.ArgumentParser(description='Comact trim decision pricing model')
+    ap.add_argument('xml', help='AllProducts.xml export')
+    ap.add_argument('species', nargs='?', help='single-combo CSV mode: species code')
+    ap.add_argument('thick', nargs='?', help='single-combo CSV mode: thickness, e.g. 4/4')
+    ap.add_argument('--all', action='store_true',
+                    help='batch mode: every species in the book -> one formatted .xlsx')
+    ap.add_argument('--thickness', nargs='+', metavar='T',
+                    help='thicknesses for batch mode, e.g. --thickness 4/4 6/4 '
+                         '(default: every thickness in the export)')
+    ap.add_argument('--max-length', type=int, default=16, choices=range(8, 17),
+                    help='longest length column, e.g. 12 (default 16)')
+    ap.add_argument('--width', type=float, default=8, help='board width in inches (default 8)')
+    ap.add_argument('--scale', type=float, default=600.0,
+                    help='illustrative top even price (default 600)')
+    ap.add_argument('--out', default='trim_models.xlsx', help='batch output workbook')
+    ap.add_argument('--flat-thickness', action='store_true',
+                    help='do NOT multiply $/board by thickness (6/4 x1.5 etc.)')
+    args = ap.parse_args()
+
+    combo = load_raw(args.xml)
+
+    if args.all:
+        thicknesses = args.thickness or sorted({t for (_, t) in combo},
+                                               key=lambda s: thick_decimal(s))
+        written = write_workbook(combo, args.out, list(SPECIES), thicknesses,
+                                 max_length=args.max_length, width=args.width,
+                                 scale=args.scale,
+                                 apply_thickness=not args.flat_thickness)
+        if not written:
+            print('No known species/thickness combos found in export.'); sys.exit(1)
+        skipped = [f'{s} {t}' for s in SPECIES for t in thicknesses
+                   if f'{s} {t}' not in written]
+        print(f'wrote {args.out}: {len(written)} sheets')
+        print('  ' + ' | '.join(written))
+        if skipped:
+            print('skipped (not in export): ' + ' | '.join(skipped))
+        sys.exit(0)
+
+    # ---- legacy single-combo CSV mode ----
+    if args.species and args.thick:
+        species, thick = args.species, args.thick
     else:
         species, thick = max((k for k in combo if k[0] in SPECIES),
                              key=lambda k: len(combo[k]), default=(None, None))

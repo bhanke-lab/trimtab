@@ -145,3 +145,9 @@ Compares board-foot output between two Comact trimmer simulation runs, grade by 
 ### Note
 
 This tool reads simulation output. It doesn't price boards itself. Pair it with the Scalable Model (the pricing policy) and the Value Table (the lookup).
+
+### On Trim Tabs
+
+A trim tab is the small rudder bolted to the trailing edge of a ship's main rudder. The main rudder is too heavy to push directly, so you turn the small one. Deflecting the tab generates lift on the tab. That lift is small, but it acts at the trailing edge, the longest moment arm available on the rudder. This produces enough torque about the rudder stock to rotate the whole thing. The rudder then generates the turning force on the hull.
+
+All systems have a trailing edge. Trim tab.
